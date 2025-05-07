@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel to JSONL Conversion Test</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ccc;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            white-space: pre-wrap;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Excel to JSONL Conversion Test</h1>
+    <div class="container">
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="excelFile">Select Excel File:</label>
+                <input type="file" id="excelFile" name="file" accept=".xlsx" required>
+            </div>
+            <button type="submit">Convert to JSONL</button>
+        </form>
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('excelFile');
+            const resultDiv = document.getElementById('result');
+            
+            if (!fileInput.files.length) {
+                alert('Please select a file');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            resultDiv.textContent = 'Uploading and converting...';
+            resultDiv.style.display = 'block';
+            
+            try {
+                const response = await fetch('http://localhost:3001/api/v1/files/conversion', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `Error: ${response.status}`);
+                }
+                
+                const blob = await response.blob();
+                const jsonlUrl = URL.createObjectURL(blob);
+                
+                resultDiv.innerHTML = `
+                    <p>Conversion successful!</p>
+                    <p><a href="${jsonlUrl}" download="${file.name.replace('.xlsx', '.jsonl')}">Download JSONL file</a></p>
+                `;
+                
+                // Read the first few lines of the JSONL
+                const reader = new FileReader();
+                reader.onload = function() {
+                    const text = reader.result;
+                    const lines = text.split('\n').slice(0, 5);
+                    resultDiv.innerHTML += `
+                        <h3>Preview (first 5 items):</h3>
+                        <pre>${lines.join('\n')}</pre>
+                    `;
+                };
+                reader.readAsText(blob);
+                
+            } catch (error) {
+                resultDiv.textContent = `Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html> 

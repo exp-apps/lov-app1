@@ -1,0 +1,55 @@
+[
+  {
+    "name": "CONTEXT_CARRYOVER_FAIL",
+    "level2": [
+      {
+        "name": "MISSING_INFO_FOR_CONTEXT"
+      },
+      {
+        "name": "MULTI_TOPIC_SWITCH"
+      }
+    ]
+  },
+  {
+    "name": "CONTENT_GAP",
+    "level2": [
+      {
+        "name": "NO_KB_ARTICLE"
+      },
+      {
+        "name": "POLICY_BLOCK"
+      },
+      {
+        "name": "API_404"
+      }
+    ]
+  },
+  {
+    "name": "USER_ESCALATION",
+    "level2": [
+      {
+        "name": "EXPLICIT_ESCALATE"
+      },
+      {
+        "name": "NEGATIVE_SENTIMENT"
+      },
+      {
+        "name": "ABUSIVE_LANGUAGE"
+      }
+    ]
+  },
+  {
+    "name": "SYSTEM_ERROR",
+    "level2": [
+      {
+        "name": "TIMEOUT_KB"
+      },
+      {
+        "name": "DEPENDENCY_503"
+      },
+      {
+        "name": "RATE_LIMIT_HIT"
+      }
+    ]
+  }
+] 
