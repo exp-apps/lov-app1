@@ -200,6 +200,13 @@ function convertExternalFileToDataset(file: ExternalFile): Dataset {
   // This will be overridden with actual count when content is loaded
   const estimatedRows = Math.floor(file.bytes / 500);
   
+  // Ensure we have a valid file ID
+  if (!file.id) {
+    console.error("External file is missing ID:", file);
+  }
+  
+  console.log(`Converting external file to dataset: ${file.id} (${file.filename})`);
+  
   return {
     id: file.id,
     fileName: file.filename,
@@ -755,13 +762,25 @@ export async function convertExcelToJsonl(file: File): Promise<File> {
 // Fetch JSONL file content
 export async function getFileContent(fileId: string): Promise<any[]> {
   try {
+    if (!fileId) {
+      console.error("No fileId provided to getFileContent");
+      toast.error("Invalid file ID");
+      return [];
+    }
+
     console.log(`Fetching content for file: ${fileId}`);
     
     // Get the API key from localStorage (optional)
     const apiKey = getApiKey();
     
-    // Call the external API
-    const response = await fetch(`${EXTERNAL_API_BASE_URL}/v1/files/${fileId}/content`, {
+    // Ensure we're not using any hardcoded values
+    const sanitizedFileId = fileId.trim();
+    
+    // Call the external API with the provided fileId
+    const url = `${EXTERNAL_API_BASE_URL}/v1/files/${sanitizedFileId}/content`;
+    console.log(`Making API call to: ${url}`);
+    
+    const response = await fetch(url, {
       headers: {
         ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {})
       }
@@ -785,6 +804,7 @@ export async function getFileContent(fileId: string): Promise<any[]> {
       }
     }).filter(item => item !== null);
     
+    console.log(`Successfully parsed ${parsedData.length} records from file ${fileId}`);
     return parsedData;
   } catch (error) {
     console.error("Failed to fetch file content:", error);

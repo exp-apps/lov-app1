@@ -85,13 +85,15 @@ Make sure:
 // Parse available models from environment variable
 const parseAvailableModels = (): { value: string; label: string }[] => {
   const modelsEnv = import.meta.env.VITE_EVAL_MODELS || "";
-  return modelsEnv ? modelsEnv.split(',').map(model => {
-    const trimmedModel = model.trim();
-    return {
-      value: trimmedModel,
-      label: trimmedModel.split('@')[1] || trimmedModel
-    };
-  }) : [];
+  return modelsEnv ? modelsEnv.split(',')
+    .filter(model => model.trim().length > 0) // Filter out empty strings
+    .map(model => {
+      const trimmedModel = model.trim();
+      return {
+        value: trimmedModel,
+        label: trimmedModel
+      };
+    }) : [];
 };
 
 // Available models for evaluation
@@ -111,7 +113,7 @@ export default function EvalConfigPage() {
   const [loadingMoreDatasets, setLoadingMoreDatasets] = useState(false);
   const [hasMoreDatasets, setHasMoreDatasets] = useState(true);
   const [lastDatasetId, setLastDatasetId] = useState<string | undefined>(undefined);
-  const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS[0]?.value || "");
+  const [selectedModel, setSelectedModel] = useState(AVAILABLE_MODELS.length > 0 ? AVAILABLE_MODELS[0].value : "");
   const [selectedTemplate] = useState("handover-taxonomy");
   const [promptText, setPromptText] = useState(DEFAULT_TAXONOMY_PROMPT);
   const [promptEditable, setPromptEditable] = useState(false);
@@ -122,24 +124,6 @@ export default function EvalConfigPage() {
   const [loadingSampleData, setLoadingSampleData] = useState(false);
   const [sampleData, setSampleData] = useState<any[]>([]);
   
-  // Refs for intersection observer
-  const datasetLoaderRef = useRef<HTMLDivElement>(null);
-
-  // Extract field paths from a JSON object
-  const extractFieldPaths = (obj: any, parentPath: string = ''): string[] => {
-    if (!obj || typeof obj !== 'object') return [];
-    
-    return Object.entries(obj).flatMap(([key, value]) => {
-      const currentPath = parentPath ? `${parentPath}.${key}` : key;
-      
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        return extractFieldPaths(value, currentPath);
-      }
-      
-      return [currentPath];
-    });
-  };
-
   // Load more datasets
   const loadMoreDatasets = useCallback(async () => {
     // Check conditions
@@ -228,6 +212,16 @@ export default function EvalConfigPage() {
     fetchDatasets();
   }, [preselectedDatasetId]);
   
+  // Ensure selectedModel is valid
+  useEffect(() => {
+    if (AVAILABLE_MODELS.length > 0) {
+      if (!selectedModel || !AVAILABLE_MODELS.some(model => model.value === selectedModel)) {
+        // If current model is not in the available models, set to first available model
+        setSelectedModel(AVAILABLE_MODELS[0].value);
+      }
+    }
+  }, [selectedModel]);
+
   // Setup intersection observer for dataset selection infinite scrolling
   useEffect(() => {
     // Only set up the observer when the dialog is open and we have more data to load
@@ -290,19 +284,32 @@ export default function EvalConfigPage() {
 
   // Load sample data for a dataset to extract field names
   const loadSampleDataForDataset = async (datasetId: string) => {
+    if (!datasetId) {
+      console.error("No datasetId provided to loadSampleDataForDataset");
+      toast.error("Invalid dataset ID");
+      return;
+    }
+    
+    console.log(`Loading sample data for dataset ID: "${datasetId}"`);
     setLoadingSampleData(true);
     
     try {
+      // Ensure we're using the correct dataset ID
+      console.log(`About to call getFileContent with ID: "${datasetId}"`);
       const content = await getFileContent(datasetId);
+      console.log(`Received ${content.length} sample data records`);
       setSampleData(content);
       
       if (content.length > 0) {
         // Extract fields from the first item
         const fields = extractFieldPaths(content[0]);
+        console.log(`Extracted ${fields.length} fields from sample data`);
         setAvailableFields(fields);
         
         // Clear any existing mapping when selecting a new dataset
         setVariableMapping({});
+      } else {
+        console.warn("No content received for dataset");
       }
     } catch (error) {
       console.error("Failed to load sample data:", error);
@@ -313,9 +320,20 @@ export default function EvalConfigPage() {
   };
   
   const handleSelectDataset = async (dataset: Dataset) => {
+    console.log(`Selected dataset: "${dataset.id}" (${dataset.fileName})`);
+    
+    // Ensure dataset has a valid ID
+    if (!dataset.id) {
+      console.error("Selected dataset is missing ID:", dataset);
+      toast.error("Invalid dataset selected");
+      return;
+    }
+    
     setSelectedDataset(dataset);
     setSelectedDatasetId(dataset.id);
     setDatasetSelectorOpen(false);
+    
+    // Pass the dataset ID to load sample data
     await loadSampleDataForDataset(dataset.id);
   };
 
@@ -329,6 +347,16 @@ export default function EvalConfigPage() {
     
     if (!evalName.trim()) {
       toast.error("Please enter an evaluation name");
+      return;
+    }
+    
+    if (!selectedModel) {
+      toast.error("Please select a model");
+      return;
+    }
+    
+    if (AVAILABLE_MODELS.length === 0) {
+      toast.error("No models available. Please check your environment configuration.");
       return;
     }
     
@@ -377,6 +405,24 @@ export default function EvalConfigPage() {
   // Toggle prompt editability
   const togglePromptEdit = () => {
     setPromptEditable(!promptEditable);
+  };
+
+  // Refs for intersection observer
+  const datasetLoaderRef = useRef<HTMLDivElement>(null);
+
+  // Extract field paths from a JSON object
+  const extractFieldPaths = (obj: any, parentPath: string = ''): string[] => {
+    if (!obj || typeof obj !== 'object') return [];
+    
+    return Object.entries(obj).flatMap(([key, value]) => {
+      const currentPath = parentPath ? `${parentPath}.${key}` : key;
+      
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        return extractFieldPaths(value, currentPath);
+      }
+      
+      return [currentPath];
+    });
   };
 
   return (
@@ -433,23 +479,29 @@ export default function EvalConfigPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="model">Model</Label>
-                <Select
-                  value={selectedModel}
-                  onValueChange={(value) => setSelectedModel(value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {AVAILABLE_MODELS.map((model) => (
-                      <SelectItem key={model.value} value={model.value}>
-                        {model.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {AVAILABLE_MODELS.length > 0 ? (
+                  <Select
+                    value={selectedModel}
+                    onValueChange={(value) => setSelectedModel(value)}
+                  >
+                    <SelectTrigger id="model">
+                      <SelectValue placeholder="Select a model" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {AVAILABLE_MODELS.map((model) => (
+                        <SelectItem key={model.value} value={model.value}>
+                          {model.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="p-3 border rounded-md text-muted-foreground">
+                    No models available. Please check your environment configuration.
+                  </div>
+                )}
                 <p className="text-sm text-muted-foreground">
-                  The model to use for this evaluation
+                  The model to use for this evaluation (Available: {AVAILABLE_MODELS.length})
                 </p>
               </div>
 
