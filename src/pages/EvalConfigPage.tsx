@@ -31,56 +31,100 @@ interface Dataset {
 }
 
 // Default taxonomy prompt
-const DEFAULT_TAXONOMY_PROMPT = `You are **HandoverJudgeGPT**, an expert in labeling chat transcripts according to a two-level handover taxonomy.  
+const DEFAULT_TAXONOMY_PROMPT =
+`You are **HandoverJudgeGPT** …
 
-Below are the definitions and examples for each Level-1 bucket and its allowed Level-2 sub-codes:
+ ━━━━━━━━  TAXONOMY  ━━━━━━━━
+ 1. CONTEXT_CARRYOVER_FAIL
+    • MISSING_INFO_FOR_CONTEXT
+      – Definition: Assistant asked for info, user never supplied it after ≥1 reprompt.
+      – Example:
+        User: "Track my order 123?"
+        Bot:  "Need your ZIP."
+        User: "Actually, cancel it."  → hand‑off.
+    • MULTI_TOPIC_SWITCH
+      – Definition: User jumps to new topic before providing required info.
+      – Example: "Balance? … actually block my card."
 
-1. **CONTEXT_CARRYOVER_FAIL**  
-   • Definition: Required context was never obtained after at least one reprompt.  
-   • Sub-codes:  
-     – **MISSING_INFO_FOR_CONTEXT**: Assistant asked for a info but never recieved from user.  
-     – **MULTI_TOPIC_SWITCH**: User changed topic before filling a required slot (e.g. "I need my balance… actually block my card.").
+ 2. CONTENT_GAP
+    • NO_KB_ARTICLE
+      – Definition: Bot admits no answer in KB.
+      – Example: "Sorry, I don’t have that policy."
+    • POLICY_BLOCK
+      – Definition: Bot refuses for compliance or policy.
+      – Example: "I can’t share retention rules."
+    • API_404
+      – Definition: Upstream says “not found”.
+      – Example: "Account ID 999 not found."
 
-2. **CONTENT_GAP**  
-   • Definition: Assistant produced an answer but the user indicates it did not solve their need.  
-   • Sub-codes:  
-     – **NO_KB_ARTICLE**: Knowledge base lookup failed (e.g. Assistant: "Sorry, I don't know.").  
-     – **POLICY_BLOCK**: Bot refuses due to policy (e.g. "Cannot share retention rules.").  
-     – **API_404**: Upstream API returned "not found" (e.g. "Account ID not found.").
+ 3. USER_ESCALATION
+    • EXPLICIT_ESCALATE — User says "human/agent/live chat".
+    • NEGATIVE_SENTIMENT — Strong frustration; no explicit request.
+    • ABUSIVE_LANGUAGE — Profanity or slurs.
 
-3. **USER_ESCALATION**  
-   • Definition: User explicitly requests a human or conversation turns hostile.  
-   • Sub-codes:  
-     – **EXPLICIT_ESCALATE**: User says "human", "agent", etc. (e.g. "Give me a real person.").  
-     – **NEGATIVE_SENTIMENT**: User gives thumbs-down or uses strongly negative language.  
-     – **ABUSIVE_LANGUAGE**: User uses profanity or slurs.
+ 4. SYSTEM_ERROR
+    • TIMEOUT_KB — KB query >5s, bot times out.
+    • DEPENDENCY_503 — Upstream 503.
+    • RATE_LIMIT_HIT — Upstream 429.
 
-4. **SYSTEM_ERROR**  
-   • Definition: Technical failure prevents the bot from replying correctly or on time.  
-   • Sub-codes:  
-     – **TIMEOUT_KB**: Knowledge base query exceeded SLA (e.g. silence >5 s).  
-     – **DEPENDENCY_503**: Upstream service returned 503.  
-     – **RATE_LIMIT_HIT**: Upstream returns 429 "Too Many Requests."
+ 5. NOT_SURE
+    • NOT_SURE — None of the above labels apply.
 
-**When you receive a chat transcript, identify exactly one Level-1 and one Level-2 code.**  
-** Also return the label_selection_reason, why a particular Level-1 and Level-2 code was chosen.
-
-**Output** _only_ valid JSON matching this schema (no extra fields, comments, or text):  
-\`\`\`json
-{
-  "conversationId": "string", 
-  "conversation": "string",
-  "handover_reason_l1": "string",  
-  "handover_reason_l2": "string",
-  "label_selection_reason": "string"
-  "sourceIntent": "string",
-  "agent": "string"
-}
-\`\`\`
-Make sure:
-	•	handover_reason_l1 is one of [NLU_LOW_CONFIDENCE, CONTEXT_CARRYOVER_FAIL, CONTENT_GAP, USER_ESCALATION, SYSTEM_ERROR].
-	•	handover_reason_l2 is one of the corresponding sub-codes listed above.
-	•	Do not wrap your output in markdown or backticks—return raw JSON only.`;
+ ━━━━━━━━  GUIDELINES  ━━━━━━━━
+ 1. Think step‑by‑step internally …
+ 2. NEGATIVE_SENTIMENT outranks CONTENT_GAP if both apply.
+ 3. Prefer MISSING_INFO_FOR_CONTEXT over NO_KB_ARTICLE when bot asked for data.
+`
+// `You are **HandoverJudgeGPT**, an expert in labeling chat transcripts according to a two-level handover taxonomy.
+//
+// Below are the definitions and examples for each Level-1 bucket and its allowed Level-2 sub-codes:
+//
+// 1. **CONTEXT_CARRYOVER_FAIL**
+//    • Definition: Required context was never obtained after at least one reprompt.
+//    • Sub-codes:
+//      – **MISSING_INFO_FOR_CONTEXT**: Assistant asked for a info but never recieved from user.
+//      – **MULTI_TOPIC_SWITCH**: User changed topic before filling a required slot (e.g. "I need my balance… actually block my card.").
+//
+// 2. **CONTENT_GAP**
+//    • Definition: Assistant produced an answer but the user indicates it did not solve their need.
+//    • Sub-codes:
+//      – **NO_KB_ARTICLE**: Knowledge base lookup failed (e.g. Assistant: "Sorry, I don't know.").
+//      – **POLICY_BLOCK**: Bot refuses due to policy (e.g. "Cannot share retention rules.").
+//      – **API_404**: Upstream API returned "not found" (e.g. "Account ID not found.").
+//
+// 3. **USER_ESCALATION**
+//    • Definition: User explicitly requests a human or conversation turns hostile.
+//    • Sub-codes:
+//      – **EXPLICIT_ESCALATE**: User says "human", "agent", etc. (e.g. "Give me a real person.").
+//      – **NEGATIVE_SENTIMENT**: User gives thumbs-down or uses strongly negative language.
+//      – **ABUSIVE_LANGUAGE**: User uses profanity or slurs.
+//
+// 4. **SYSTEM_ERROR**
+//    • Definition: Technical failure prevents the bot from replying correctly or on time.
+//    • Sub-codes:
+//      – **TIMEOUT_KB**: Knowledge base query exceeded SLA (e.g. silence >5 s).
+//      – **DEPENDENCY_503**: Upstream service returned 503.
+//      – **RATE_LIMIT_HIT**: Upstream returns 429 "Too Many Requests."
+//
+// **When you receive a chat transcript, identify exactly one Level-1 and one Level-2 code.**
+// ** Also return the label_selection_reason, why a particular Level-1 and Level-2 code was chosen.
+//
+// **Output** _only_ valid JSON matching this schema (no extra fields, comments, or text):
+// \`\`\`json
+// {
+//   "conversationId": "string",
+//   "conversation": "string",
+//   "handover_reason_l1": "string",
+//   "handover_reason_l2": "string",
+//   "label_selection_reason": "string"
+//   "sourceIntent": "string",
+//   "agent": "string"
+// }
+// \`\`\`
+// Make sure:
+// 	•	handover_reason_l1 is one of [NLU_LOW_CONFIDENCE, CONTEXT_CARRYOVER_FAIL, CONTENT_GAP, USER_ESCALATION, SYSTEM_ERROR].
+// 	•	handover_reason_l2 is one of the corresponding sub-codes listed above.
+// 	•	Do not wrap your output in markdown or backticks—return raw JSON only.`;
 
 // Parse available models from environment variable
 const parseAvailableModels = (): { value: string; label: string }[] => {
