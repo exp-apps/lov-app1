@@ -325,18 +325,15 @@ export async function createEval(
     
     console.log("Creating evaluation with payload:", payload);
     
-    // Get the API key from localStorage - required for this call
-    const apiKey = getApiKey(true);
-    if (!apiKey) {
-      throw new Error("API key not configured");
-    }
+    // Get the API key from localStorage - no longer required
+    const apiKey = getApiKey();
     
     // Make a real API call to create the evaluation
     const response = await fetch(`${EXTERNAL_API_BASE_URL}/v1/evals`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {})
       },
       body: JSON.stringify(payload)
     });
@@ -542,11 +539,8 @@ export async function getRunResult(runId: string): Promise<RunResult> {
 // Annotation APIs
 export async function getAnnotations(runId: string, after?: string, limit: number = 8): Promise<Annotation[]> {
   try {
-    // Get API key - required for this call
-    const apiKey = getApiKey(true);
-    if (!apiKey) {
-      throw new Error("API key not configured");
-    }
+    // Get API key - no longer required
+    const apiKey = getApiKey();
     
     // Get the evaluation ID from localStorage
     const evalId = localStorage.getItem("lastRunEvalId");
@@ -583,7 +577,7 @@ export async function getAnnotations(runId: string, after?: string, limit: numbe
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {})
       }
     });
     
@@ -618,11 +612,8 @@ export async function saveAnnotation(
   updates: { handoverReasonL1?: string; handoverReasonL2?: string }
 ): Promise<void> {
   try {
-    // Get API key - required for this call
-    const apiKey = getApiKey(true);
-    if (!apiKey) {
-      throw new Error("API key not configured");
-    }
+    // Get API key - no longer required
+    const apiKey = getApiKey();
     
     // Get the evaluation ID from localStorage
     const evalId = localStorage.getItem("lastRunEvalId");
@@ -696,7 +687,7 @@ export async function saveAnnotation(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {})
       },
       body: JSON.stringify({ 
         annotationAttributes: apiUpdates 
@@ -719,12 +710,52 @@ export async function saveAnnotation(
 }
 
 export async function exportAnnotations(runId: string, format: "xlsx" | "jsonl"): Promise<Blob> {
-  // In a real app, we would fetch from the API with proper content type
-  // For now, simulate a delay
-  await new Promise(resolve => setTimeout(resolve, 1500));
-  
-  // Return mock blob
-  return new Blob(["Mock export data"], { type: format === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/jsonl" });
+  try {
+    console.log(`Exporting annotations for run: ${runId} in format: ${format}`);
+    
+    if (format === "jsonl") {
+      // For backward compatibility, maintain the mock implementation for JSONL
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      return new Blob(["Mock export data"], { type: "application/jsonl" });
+    }
+    
+    // Get the evaluation ID from localStorage
+    const evalId = localStorage.getItem("lastRunEvalId");
+    if (!evalId) {
+      throw new Error("Evaluation ID not available for exporting annotations");
+    }
+    
+    // Get the test criteria ID from localStorage
+    const testId = localStorage.getItem("lastTestCriteriaId");
+    if (!testId) {
+      throw new Error("Test criteria ID not available for exporting annotations");
+    }
+    
+    // Make a POST request to the new export API
+    const response = await fetch(`${API_BASE_URL}/v1/files/export`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        evalId,
+        evalRundId: runId,
+        testId
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Export failed with status: ${response.status}`);
+    }
+    
+    // Return the response as a blob
+    return await response.blob();
+  } catch (error) {
+    console.error("Failed to export annotations:", error);
+    toast.error(`Failed to export annotations: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw error;
+  }
 }
 
 // Excel to JSONL conversion with translation
@@ -891,11 +922,8 @@ export async function getRunDetails(evalId: string, runId: string): Promise<RunD
   try {
     console.log(`Fetching run details for evalId: ${evalId}, runId: ${runId}`);
     
-    // Get API key from localStorage - required for this call
-    const apiKey = getApiKey(true);
-    if (!apiKey) {
-      throw new Error("API key not configured");
-    }
+    // Get API key from localStorage - no longer required
+    const apiKey = getApiKey();
     
     // The API requires both evalId and runId
     if (evalId === "unknown") {
@@ -909,7 +937,7 @@ export async function getRunDetails(evalId: string, runId: string): Promise<RunD
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {})
       }
     });
     
@@ -980,11 +1008,8 @@ export async function getEvalRuns(
   try {
     console.log(`Fetching runs for evaluation ${evalId}`);
     
-    // Get API key - required for this call
-    const apiKey = getApiKey(true);
-    if (!apiKey) {
-      throw new Error("API key not configured");
-    }
+    // Get API key - no longer required
+    const apiKey = getApiKey();
     
     // Always use descending order
     const order = "desc";
@@ -1001,7 +1026,7 @@ export async function getEvalRuns(
     const response = await fetch(`${EXTERNAL_API_BASE_URL}${queryUrl}`, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {})
       }
     });
     
@@ -1057,10 +1082,8 @@ export async function getRunAggregation(
   evalId?: string
 ): Promise<AggregationData | null> {
   try {
-    const apiKey = getApiKey(true);
-    if (!apiKey) {
-      throw new Error("API key not configured");
-    }
+    // API key no longer required
+    const apiKey = getApiKey();
     
     // If evalId is not provided, try to fetch it from localStorage
     if (!evalId) {
@@ -1095,7 +1118,7 @@ export async function getRunAggregation(
     const response = await fetch(url, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {})
       }
     });
     

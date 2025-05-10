@@ -316,7 +316,7 @@ export default function RunMonitorPage() {
                         Back
                       </Button>
                       <Button
-                        onClick={() => navigate(`/runs/${runDetails.id}/annotations`)}
+                        onClick={() => navigate(`/runs/${runDetails.id}/results`)}
                       >
                         <FileText className="mr-2 h-4 w-4" />
                         View Results

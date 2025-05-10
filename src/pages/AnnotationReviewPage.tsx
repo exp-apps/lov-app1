@@ -570,17 +570,10 @@ export default function AnnotationReviewPage() {
       <div className="mt-6 flex gap-2 justify-end">
         <Button
           variant="outline"
-          onClick={() => handleExport("jsonl")}
-          disabled={exporting || annotations.length === 0}
-        >
-          Export JSONL
-        </Button>
-        <Button
-          variant="outline"
           onClick={() => handleExport("xlsx")}
           disabled={exporting || annotations.length === 0}
         >
-          Export Excel
+          {exporting ? "Exporting..." : "Export Excel"}
         </Button>
       </div>
     </PageContainer>

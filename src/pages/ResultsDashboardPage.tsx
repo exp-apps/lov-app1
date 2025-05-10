@@ -215,78 +215,36 @@ export default function ResultsDashboardPage() {
                 Annotation Results (Total: {aggregationData.annotationsCount})
               </h2>
               
-              {/* Centered Level-1 Pie Chart */}
-              <div className="mb-8 mx-auto max-w-2xl">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-center">Level-1 Reason Distribution</CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex justify-center">
-                    <div className="h-80 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={formatLevel1Data(aggregationData.aggregations)}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={60}
-                            outerRadius={120}
-                            fill="#8884d8"
-                            paddingAngle={2}
-                            dataKey="count"
-                            nameKey="name"
-                            label={({ name, percentage }) => `${name}: ${percentage}%`}
-                            labelLine={true}
-                            isAnimationActive={true}
-                          >
-                            {aggregationData.aggregations.map((entry) => (
-                              <Cell 
-                                key={`l1-cell-${entry.name}`} 
-                                fill={getLevel1Color(entry.name)}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip content={<CustomPieTooltip />} />
-                          <Legend />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-              
-              {/* Level-2 Breakdown Cards - 2 per row */}
-              <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
-                {aggregationData.aggregations.map((level1Category) => (
-                  <Card key={level1Category.name}>
-                    <CardHeader>
-                      <CardTitle style={{ color: getLevel1Color(level1Category.name) }}>
-                        {level1Category.name} Breakdown
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="h-64">
-                        {getLevel2Data(level1Category.name).length > 0 ? (
+              {aggregationData.aggregations && aggregationData.aggregations.length > 0 ? (
+                <>
+                  {/* Centered Level-1 Pie Chart */}
+                  <div className="mb-8 mx-auto max-w-2xl">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-center">Level-1 Reason Distribution</CardTitle>
+                      </CardHeader>
+                      <CardContent className="flex justify-center">
+                        <div className="h-80 w-full">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
-                                data={getLevel2Data(level1Category.name)}
+                                data={formatLevel1Data(aggregationData.aggregations)}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={40}
-                                outerRadius={80}
+                                innerRadius={60}
+                                outerRadius={120}
                                 fill="#8884d8"
                                 paddingAngle={2}
                                 dataKey="count"
                                 nameKey="name"
-                                label={({ name, percentage }) => `${percentage}%`}
-                                labelLine={false}
+                                label={({ name, percentage }) => `${name}: ${percentage}%`}
+                                labelLine={true}
                                 isAnimationActive={true}
                               >
-                                {getLevel2Data(level1Category.name).map((entry, index) => (
+                                {aggregationData.aggregations.map((entry) => (
                                   <Cell 
-                                    key={`l2-cell-${entry.name}`} 
-                                    fill={L2_COLORS[index % L2_COLORS.length]} 
+                                    key={`l1-cell-${entry.name}`} 
+                                    fill={getLevel1Color(entry.name)}
                                   />
                                 ))}
                               </Pie>
@@ -294,18 +252,71 @@ export default function ResultsDashboardPage() {
                               <Legend />
                             </PieChart>
                           </ResponsiveContainer>
-                        ) : (
-                          <div className="h-full flex items-center justify-center">
-                            <p className="text-muted-foreground">
-                              No Level-2 data available for this category
-                            </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  {/* Level-2 Breakdown Cards - 2 per row */}
+                  <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+                    {aggregationData.aggregations.map((level1Category) => (
+                      <Card key={level1Category.name}>
+                        <CardHeader>
+                          <CardTitle style={{ color: getLevel1Color(level1Category.name) }}>
+                            {level1Category.name} Breakdown
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="h-64">
+                            {getLevel2Data(level1Category.name).length > 0 ? (
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie
+                                    data={getLevel2Data(level1Category.name)}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={40}
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    paddingAngle={2}
+                                    dataKey="count"
+                                    nameKey="name"
+                                    label={({ name, percentage }) => `${percentage}%`}
+                                    labelLine={false}
+                                    isAnimationActive={true}
+                                  >
+                                    {getLevel2Data(level1Category.name).map((entry, index) => (
+                                      <Cell 
+                                        key={`l2-cell-${entry.name}`} 
+                                        fill={L2_COLORS[index % L2_COLORS.length]} 
+                                      />
+                                    ))}
+                                  </Pie>
+                                  <Tooltip content={<CustomPieTooltip />} />
+                                  <Legend />
+                                </PieChart>
+                              </ResponsiveContainer>
+                            ) : (
+                              <div className="h-full flex items-center justify-center">
+                                <p className="text-muted-foreground">
+                                  No Level-2 data available for this category
+                                </p>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-md border p-6 bg-muted/10 text-center mb-8">
+                  <h3 className="text-lg font-medium">Annotations are not available</h3>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    No annotation data was found for this run.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-md border p-6 bg-muted/10 text-center mb-8">

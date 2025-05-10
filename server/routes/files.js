@@ -43,6 +43,56 @@ function mightNotBeEnglish(text) {
   return /[^\x00-\x7F]/.test(text);
 }
 
+// Function to fetch all annotations page by page
+async function fetchAllAnnotations(evalId, evalRunId, testId) {
+  console.log(`Fetching annotations for evalId: ${evalId}, runId: ${evalRunId}, testId: ${testId}`);
+  
+  const allAnnotations = [];
+  let after = null;
+  const limit = 100;
+  let hasMore = true;
+  
+  while (hasMore) {
+    try {
+      // Construct URL with 'after' parameter if available
+      let url = `http://localhost:8080/v1/evals/${evalId}/runs/${evalRunId}/tests/${testId}/annotations?order=asc&limit=${limit}`;
+      if (after) {
+        url += `&after=${after}`;
+      }
+      
+      console.log(`Fetching page with URL: ${url}`);
+      
+      // Make the API call
+      const response = await axios.get(url);
+      const data = response.data;
+      
+      // If we got results
+      if (data && Array.isArray(data) && data.length > 0) {
+        console.log(`Received ${data.length} annotations`);
+        allAnnotations.push(...data);
+        
+        // Get the ID of the last item for pagination
+        after = data[data.length - 1].id;
+      } else {
+        // No more results
+        hasMore = false;
+        console.log('No more annotations to fetch');
+      }
+      
+      // If we received fewer items than the limit, we've reached the end
+      if (data.length < limit) {
+        hasMore = false;
+      }
+    } catch (error) {
+      console.error('Error fetching annotations:', error.message);
+      hasMore = false;
+    }
+  }
+  
+  console.log(`Fetched a total of ${allAnnotations.length} annotations`);
+  return allAnnotations;
+}
+
 // POST /api/v1/files/conversion
 // Converts Excel file to JSONL with translation
 router.post('/conversion', async (req, res, next) => {
@@ -167,6 +217,93 @@ router.post('/conversion', async (req, res, next) => {
     }
   } catch (error) {
     console.error('Conversion error:', error);
+    next(error);
+  }
+});
+
+// POST /api/v1/files/export
+// Fetches annotations from external API and exports them as Excel
+router.post('/export', async (req, res, next) => {
+  try {
+    console.log('Export request received:', req.body);
+    
+    // Validate request body
+    const { evalId, evalRundId, testId } = req.body;
+    
+    if (!evalId || !evalRundId || !testId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required parameters: evalId, evalRundId, or testId'
+      });
+    }
+    
+    // Fetch all annotations from the external API
+    const annotations = await fetchAllAnnotations(evalId, evalRundId, testId);
+    
+    if (annotations.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No annotations found'
+      });
+    }
+    
+    // Process annotations into the required format
+    const processedData = annotations.map(annotation => {
+      // Get values from annotation, handle both original and overridden values
+      const attrs = annotation.annotationAttributes || {};
+      const overrideAttrs = annotation.overriddenAnnotationAttributes || {};
+      
+      return {
+        // Use overridden values if they exist, otherwise use original values
+        conversationId: attrs.conversationId || '',
+        conversation: attrs.conversation || '',
+        label_level1: overrideAttrs.handover_reason_l1 || attrs.handover_reason_l1 || '',
+        label_level2: overrideAttrs.handover_reason_l2 || attrs.handover_reason_l2 || '',
+        Reason: attrs.label_selection_reason || ''
+      };
+    });
+    
+    // Create a worksheet from the processed data
+    const worksheet = XLSX.utils.json_to_sheet(processedData);
+    
+    // Create a workbook and add the worksheet to it
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Annotations');
+    
+    // Create temp directory if it doesn't exist
+    if (!fs.existsSync(path.join(__dirname, '..', 'temp'))) {
+      fs.mkdirSync(path.join(__dirname, '..', 'temp'), { recursive: true });
+    }
+    
+    // Generate a unique filename
+    const timestamp = Date.now();
+    const fileName = `annotations_export_${timestamp}.xlsx`;
+    const filePath = path.join(__dirname, '..', 'temp', fileName);
+    
+    // Write the workbook to a file
+    XLSX.writeFile(workbook, filePath);
+    console.log(`Excel file created at: ${filePath}`);
+    
+    // Send the file as the response
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+    
+    // Stream the file to the response
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+    
+    // Delete the file after sending
+    fileStream.on('end', async () => {
+      try {
+        await unlinkAsync(filePath);
+        console.log(`Temporary file deleted: ${filePath}`);
+      } catch (error) {
+        console.error(`Error deleting temporary file: ${error.message}`);
+      }
+    });
+    
+  } catch (error) {
+    console.error('Export error:', error);
     next(error);
   }
 });
