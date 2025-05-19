@@ -25,7 +25,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Loader, InfoIcon, CheckCircle, Calendar, User, ChevronRight, ChevronDown, 
-  BarChart, PieChart, MessageSquare, X, Clock
+  BarChart, PieChart, MessageSquare, X, Clock, Download
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -1015,12 +1015,37 @@ export default function DomainLabellingPage() {
         </TabsContent>
         
         <TabsContent value="dashboard" className="space-y-6">
+          {/* Export Button at the top */}
+          <div className="flex justify-end mb-2">
+            <Button 
+              variant="outline" 
+              className="flex items-center gap-2"
+              onClick={() => window.open('http://localhost:8080/v1/data/export', '_blank')}
+            >
+              <Download className="h-4 w-4" />
+              Export All Labeled Data
+            </Button>
+          </div>
+          
           <Card>
             <CardHeader>
-              <CardTitle>Domain Labels Dashboard</CardTitle>
-              <CardDescription>
-                Analyze distribution and trends in domain label usage
-              </CardDescription>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>Domain Labels Dashboard</CardTitle>
+                  <CardDescription>
+                    Analyze distribution and trends in domain label usage
+                  </CardDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  className="flex items-center gap-2"
+                  onClick={() => window.open('http://localhost:8080/v1/data/export', '_blank')}
+                >
+                  <Download className="h-4 w-4" />
+                  Export Data
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {isLoadingAggregation ? (
