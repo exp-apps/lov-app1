@@ -138,6 +138,70 @@ const formatLabelName = (name: string): string => {
     .join(' ');
 };
 
+// Add a new UI component for a side drawer
+const SideDrawer = ({ 
+  open, 
+  onClose, 
+  children 
+}: { 
+  open: boolean; 
+  onClose: () => void; 
+  children: React.ReactNode 
+}) => {
+  // Add effect to prevent body scrolling when drawer is open
+  React.useEffect(() => {
+    if (open) {
+      // Prevent scrolling on the main page when drawer is open
+      document.body.style.overflow = 'hidden';
+    } else {
+      // Re-enable scrolling when drawer is closed
+      document.body.style.overflow = 'auto';
+    }
+    
+    // Cleanup function
+    return () => {
+      document.body.style.overflow = 'auto';
+    };
+  }, [open]);
+  
+  return (
+    <>
+      {/* Backdrop - improved to block all interactions with main content */}
+      {open && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm transition-opacity cursor-not-allowed"
+          onClick={onClose} 
+          aria-hidden="true"
+        />
+      )}
+      
+      {/* Drawer - changed to 2/3 width */}
+      <div 
+        className={`fixed inset-y-0 right-0 w-2/3 bg-zinc-900 border-l border-zinc-800 shadow-xl z-50 transform transition-transform duration-300 ease-in-out ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {children}
+      </div>
+    </>
+  );
+};
+
+// Add a helper function to format the domain label for display
+const formatDomainLabelForDisplay = (domainLabel: string | null): string => {
+  if (!domainLabel) return "Conversations";
+  
+  // Extract the last part of the path (the actual label)
+  const parts = domainLabel.split('/');
+  const label = parts.length > 2 ? parts[parts.length - 1] : parts[0];
+  
+  // Convert snake_case to Title Case
+  return label
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ') + " Conversations";
+};
+
 export default function DomainLabellingPage() {
   const [activeTab, setActiveTab] = useState<string>("create");
   const [selectedGenericLabel, setSelectedGenericLabel] = useState<string>("");
@@ -287,7 +351,18 @@ export default function DomainLabellingPage() {
     fetchGenericLabels();
   }, []);
 
-  // Fetch domain labels
+  // Fetch domain labels when active tab changes to "existing"
+  useEffect(() => {
+    if (activeTab === "existing") {
+      // First, fetch aggregation data to ensure we have counts for sorting
+      fetchAggregationData().then(() => {
+        // Then fetch domain labels after aggregation data is loaded
+        fetchDomainLabels();
+      });
+    }
+  }, [activeTab]);
+
+  // Modified to fetch domain labels after ensuring aggregation data is loaded
   const fetchDomainLabels = async () => {
     setIsLoadingDomainLabels(true);
     setDomainLabelsError(null);
@@ -295,6 +370,16 @@ export default function DomainLabellingPage() {
     try {
       const data = await getDomainLabels();
       setDomainLabels(data);
+      
+      // After loading the data, select the first category (highest count)
+      setTimeout(() => {
+        const sortedCategories = getSortedCategories();
+        console.log("Sorted categories:", sortedCategories);
+        if (sortedCategories.length > 0) {
+          setSelectedCategory(sortedCategories[0]);
+        }
+      }, 100); // Small timeout to ensure state updates have processed
+      
     } catch (error) {
       console.error("Error fetching domain labels:", error);
       setDomainLabelsError(error instanceof Error ? error : new Error("Failed to fetch domain labels"));
@@ -303,12 +388,45 @@ export default function DomainLabellingPage() {
     }
   };
 
-  // Fetch domain labels when active tab changes to "existing"
-  useEffect(() => {
-    if (activeTab === "existing") {
-      fetchDomainLabels();
+  // Get sorted categories by count - improved to work better with available data
+  const getSortedCategories = () => {
+    const categories = getDomainLabelsByCategory();
+    
+    // Use domain categories if available (from aggregation API)
+    if (domainCategories.length > 0) {
+      // Create a map of category paths to their counts from domainCategories
+      const categoryCountMap = new Map();
+      domainCategories.forEach(category => {
+        categoryCountMap.set(category.path, category.count);
+      });
+      
+      // Sort using the pre-fetched counts
+      return Object.keys(categories)
+        .map(category => ({
+          category,
+          // Use the count from domainCategories if available, or fallback to 0
+          count: categoryCountMap.get(category) || 0
+        }))
+        .sort((a, b) => b.count - a.count)
+        .map(item => item.category);
     }
-  }, [activeTab]);
+    
+    // Fallback to calculating counts from labels if domainCategories not available
+    return Object.entries(categories)
+      .map(([category, labels]) => {
+        // Calculate total count for this category
+        const count = labels.reduce((sum, label) => {
+          const parts = label.label.split('/');
+          const bucketPath = parts.length > 2 ? parts[2] : parts[0];
+          const categoryPath = parts.length > 2 ? parts[1] : category;
+          return sum + (getBucketCount(categoryPath, bucketPath) || 0);
+        }, 0);
+        
+        return { category, count };
+      })
+      .sort((a, b) => b.count - a.count)
+      .map(item => item.category);
+  };
 
   // Fetch domain label suggestions
   const fetchDomainSuggestions = async () => {
@@ -1337,9 +1455,9 @@ export default function DomainLabellingPage() {
                 </div>
               ) : (
                 <>
-                  {/* Category navigation only - removing search bar */}
+                  {/* Category navigation only - sorted by count in descending order */}
                   <div className="flex overflow-x-auto pb-2 mb-6 gap-2 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-800">
-                    {Object.keys(getDomainLabelsByCategory()).map(category => (
+                    {getSortedCategories().map(category => (
                       <Button 
                         key={category} 
                         variant={selectedCategory === category ? "default" : "outline"}
@@ -2004,35 +2122,35 @@ export default function DomainLabellingPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Conversation Viewer Modal */}
-      <Dialog 
-        open={conversationsModalOpen} 
-        onOpenChange={setConversationsModalOpen}
-        modal={true}
+      {/* Conversation Viewer Modal - Replaced with side drawer */}
+      <SideDrawer
+        open={conversationsModalOpen}
+        onClose={() => setConversationsModalOpen(false)}
       >
-        <DialogContent className="w-[98vw] h-[98vh] max-w-[98vw] max-h-[98vh] flex flex-col p-6">
-          <DialogHeader className="flex flex-row items-center justify-between">
+        <div className="flex flex-col h-full">
+          <div className="border-b border-zinc-800 p-4 flex items-center justify-between">
             <div>
-              <DialogTitle>Conversations for {currentDomainLabel}</DialogTitle>
-              <DialogDescription>
-                Viewing conversations matching this domain label
-              </DialogDescription>
+              <h2 className="text-lg font-semibold text-zinc-100">
+                {formatDomainLabelForDisplay(currentDomainLabel)}
+              </h2>
+              <p className="text-sm text-zinc-400">
+                {currentDomainLabel}
+              </p>
             </div>
-            <Button
-              variant="destructive"
-              size="sm"
+            <button
               onClick={() => setConversationsModalOpen(false)}
-              className="text-white font-medium"
+              className="h-10 w-10 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
+              aria-label="Close drawer"
             >
-              Close Viewer
-            </Button>
-          </DialogHeader>
+              <X className="h-5 w-5" />
+            </button>
+          </div>
           
-          <div className="flex-1 flex gap-4 mt-4 min-h-0 h-[calc(100%-4rem)]">
-            {/* Conversation List Panel */}
-            <div className="w-1/3 border rounded-md flex flex-col min-h-0">
-              <div className="p-3 border-b bg-muted/50">
-                <h3 className="font-medium text-sm">Conversation List</h3>
+          <div className="flex-1 flex gap-4 p-4 min-h-0 h-[calc(100%-4rem)]">
+            {/* Conversation List Panel - on the left */}
+            <div className="w-1/3 border border-zinc-800 rounded-md flex flex-col min-h-0">
+              <div className="p-3 border-b border-zinc-800 bg-zinc-800/50">
+                <h3 className="font-medium text-sm text-zinc-300">Conversation List</h3>
               </div>
               
               <div 
@@ -2043,53 +2161,53 @@ export default function DomainLabellingPage() {
                 {isLoadingConversations && conversations.length === 0 ? (
                   <div className="p-4 space-y-3">
                     {[1, 2, 3, 4, 5].map(i => (
-                      <Skeleton key={i} className="h-16 w-full" />
+                      <Skeleton key={i} className="h-16 w-full bg-zinc-800" />
                     ))}
                   </div>
                 ) : conversationsError && conversations.length === 0 ? (
-                  <div className="p-4 text-center text-red-500">
+                  <div className="p-4 text-center text-red-400">
                     <p>{conversationsError.message}</p>
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="mt-2" 
+                      className="mt-2 border-red-800 bg-red-900/20 text-red-400" 
                       onClick={() => currentDomainLabel && fetchConversations(currentDomainLabel)}
                     >
                       Retry
                     </Button>
                   </div>
                 ) : conversations.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground">
+                  <div className="p-4 text-center text-zinc-500">
                     <p>No conversations found for this domain label</p>
                   </div>
                 ) : (
-                  <div className="divide-y">
+                  <div className="divide-y divide-zinc-800">
                     {conversations.map((conversation) => (
                       <div 
                         key={conversation.id} 
-                        className={`p-3 hover:bg-accent/50 cursor-pointer transition-colors ${
-                          selectedConversation?.id === conversation.id ? 'bg-accent' : ''
+                        className={`p-3 hover:bg-zinc-800/70 cursor-pointer transition-colors ${
+                          selectedConversation?.id === conversation.id ? 'bg-zinc-800' : ''
                         }`}
                         onClick={() => setSelectedConversation(conversation)}
                       >
                         <div className="flex justify-between items-start mb-1">
-                          <span className="font-mono text-xs text-muted-foreground truncate w-3/4">
+                          <span className="font-mono text-xs text-zinc-500 truncate w-3/4">
                             {conversation.id}
                           </span>
-                          <Badge variant="outline" className="text-[10px]">
+                          <Badge variant="outline" className="text-[10px] border-zinc-700 bg-zinc-800 text-zinc-400">
                             {conversation.messages.length} msgs
                           </Badge>
                         </div>
-                        <div className="line-clamp-2 text-sm">
+                        <div className="line-clamp-2 text-sm text-zinc-300">
                           {conversation.messages.find(m => m.role === "user")?.content || "No content"}
                         </div>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground mt-1">
+                        <div className="flex items-center justify-between text-xs text-zinc-500 mt-1">
                           <div className="flex items-center">
                             <Clock className="h-3 w-3 mr-1" />
                             {formatShortDate(conversation.metadata?.created_at)}
                           </div>
                           {conversation.metadata?.isGenericLabelAvailable && (
-                            <Badge variant="outline" className="text-[10px] bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 ml-auto">
+                            <Badge variant="outline" className="text-[10px] bg-indigo-900/30 text-indigo-300 border-indigo-800 ml-auto">
                               Generic Label Available
                             </Badge>
                           )}
@@ -2099,8 +2217,8 @@ export default function DomainLabellingPage() {
                     
                     {isLoadingConversations && (
                       <div className="p-4 text-center">
-                        <Loader className="h-4 w-4 animate-spin mx-auto" />
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <Loader className="h-4 w-4 animate-spin mx-auto text-indigo-400" />
+                        <p className="text-xs text-zinc-500 mt-1">
                           Loading more conversations...
                         </p>
                       </div>
@@ -2110,17 +2228,17 @@ export default function DomainLabellingPage() {
               </div>
             </div>
             
-            {/* Conversation Detail Panel */}
-            <div className="w-2/3 border rounded-md flex flex-col min-h-0">
-              <div className="p-3 border-b bg-muted/50 flex justify-between items-center">
-                <h3 className="font-medium text-sm">
+            {/* Conversation Detail Panel - on the right */}
+            <div className="w-2/3 border border-zinc-800 rounded-md flex flex-col min-h-0">
+              <div className="p-3 border-b border-zinc-800 bg-zinc-800/50 flex justify-between items-center">
+                <h3 className="font-medium text-sm text-zinc-300">
                   {selectedConversation 
                     ? `Conversation ${selectedConversation.id}` 
                     : 'Select a conversation to view details'
                   }
                 </h3>
                 {selectedConversation?.metadata?.model && (
-                  <Badge variant="secondary">
+                  <Badge variant="secondary" className="bg-zinc-800 text-zinc-400 border-zinc-700">
                     {selectedConversation.metadata.model}
                   </Badge>
                 )}
@@ -2140,8 +2258,8 @@ export default function DomainLabellingPage() {
                             className={`
                               max-w-[80%] rounded-lg p-3 
                               ${message.role === "assistant" 
-                                ? "bg-muted text-foreground mr-auto" 
-                                : "bg-primary text-primary-foreground ml-auto"
+                                ? "bg-zinc-800 text-zinc-300 mr-auto" 
+                                : "bg-indigo-900/70 text-indigo-100 ml-auto"
                               }
                             `}
                           >
@@ -2157,7 +2275,7 @@ export default function DomainLabellingPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
+                <div className="flex items-center justify-center h-full text-zinc-500">
                   <div className="text-center">
                     <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p>Select a conversation from the list to view details</p>
@@ -2166,8 +2284,8 @@ export default function DomainLabellingPage() {
               )}
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </SideDrawer>
     </PageContainer>
   );
 } 
