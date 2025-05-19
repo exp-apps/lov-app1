@@ -5,6 +5,7 @@ const navItems = [
   { name: "Upload Dataset", path: "/upload" },
   { name: "Dataset Library", path: "/datasets" },
   { name: "Evaluations", path: "/evals" },
+  { name: "Domain Labelling", path: "/domain-labelling" },
   { name: "Settings", path: "/settings" }
 ];
 

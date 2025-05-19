@@ -16,6 +16,7 @@ import ResultsDashboardPage from "@/pages/ResultsDashboardPage";
 import AnnotationReviewPage from "@/pages/AnnotationReviewPage";
 import SettingsPage from "@/pages/SettingsPage";
 import NotFoundPage from "@/pages/NotFoundPage";
+import DomainLabellingPage from "@/pages/DomainLabellingPage"; // Production page
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
           <Route path="/runs/:runId" element={<RunMonitorPage />} />
           <Route path="/runs/:runId/results" element={<ResultsDashboardPage />} />
           <Route path="/runs/:runId/annotations" element={<AnnotationReviewPage />} />
+          <Route path="/domain-labelling" element={<DomainLabellingPage />} /> {/* Main production route */}
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/404" element={<NotFoundPage />} />
           <Route path="*" element={<Navigate to="/404" replace />} />

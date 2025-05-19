@@ -1136,3 +1136,377 @@ export async function getRunAggregation(
     return null;
   }
 }
+
+// Generic label and Domain label interfaces
+export interface GenericLabel {
+  path: string;
+  count: number;
+}
+
+export interface DomainLabelSuggestion {
+  suggestion: string;
+  confidence: number;
+  examples: string[];
+  definition?: string;
+  reason?: string;
+  clusterId?: string;
+  originalLabel?: any;
+  originalCluster?: any;
+  existing?: boolean;
+}
+
+// Get generic labels
+export async function getGenericLabels(): Promise<GenericLabel[]> {
+  try {
+    return await fetchExternalAPI<GenericLabel[]>('/v1/buckets/labels/generic');
+  } catch (error) {
+    console.error("Failed to fetch generic labels:", error);
+    throw error;
+  }
+}
+
+// Get domain label suggestions
+export async function getDomainLabelSuggestions(
+  bucketPath: string,
+  model: string
+): Promise<{suggestions: DomainLabelSuggestion[], rawResponse: any}> {
+  try {
+    // Get API key for authorization
+    const apiKey = getApiKey(true);
+    if (!apiKey) {
+      throw new Error("API key is required for domain label suggestions");
+    }
+
+    console.log(`Requesting domain label suggestions for bucket: ${bucketPath} with model: ${model}`);
+
+    // Make a direct fetch call with more control over response handling
+    const response = await fetch(`${EXTERNAL_API_BASE_URL}/v1/buckets/labels/suggest`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        bucketPath,
+        model
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      console.error("API error response:", errorText);
+      throw new Error(`Failed to fetch domain suggestions: ${response.status} ${response.statusText}`);
+    }
+
+    // Get the raw response
+    const responseData = await response.json();
+    console.log("Domain suggestion API raw response:", responseData);
+
+    // Format the response structure into our DomainLabelSuggestion[] format
+    const suggestions: DomainLabelSuggestion[] = [];
+
+    // The actual response is an object with numeric keys (cluster IDs)
+    // Each cluster has a suggestedLabels array and exampleIds array
+    if (responseData && typeof responseData === 'object') {
+      // Loop through each cluster in the response
+      Object.keys(responseData).forEach(clusterId => {
+        const cluster = responseData[clusterId];
+        
+        // If this cluster has suggestedLabels, process them
+        if (cluster && cluster.suggestedLabels && Array.isArray(cluster.suggestedLabels)) {
+          cluster.suggestedLabels.forEach(label => {
+            // Get the examples for this cluster
+            const examples = Array.isArray(cluster.exampleIds) ? cluster.exampleIds : [];
+            
+            // Convert confidence from string (HIGH, MEDIUM, LOW) to number
+            let confidenceValue = 0.5; // Default medium confidence
+            if (label.confidence === "HIGH") {
+              confidenceValue = 0.9;
+            } else if (label.confidence === "MEDIUM") {
+              confidenceValue = 0.5;
+            } else if (label.confidence === "LOW") {
+              confidenceValue = 0.1;
+            }
+            
+            // Store original label object and cluster data for later use with the accept API
+            const rawClusterData = {
+              ...cluster.cluster,
+              // Ensure we have the ID from the object key if not in the cluster object
+              id: cluster.cluster?.id || clusterId
+            };
+            
+            // Add to our suggestions array
+            suggestions.push({
+              suggestion: label.path || "Unknown label",
+              confidence: confidenceValue,
+              examples: examples,
+              // Add additional properties that might be useful to display
+              definition: label.definition || "",
+              reason: label.reason || "",
+              clusterId: clusterId,
+              // Store the original objects for the accept API
+              originalLabel: label,
+              originalCluster: rawClusterData,
+              // Add the existing flag
+              existing: label.existing || false
+            });
+          });
+        }
+      });
+    }
+
+    console.log(`Processed ${suggestions.length} domain label suggestions`);
+    // Return both the processed suggestions and the raw response
+    return { 
+      suggestions, 
+      rawResponse: responseData 
+    };
+  } catch (error) {
+    console.error("Failed to fetch domain label suggestions:", error);
+    throw error;
+  }
+}
+
+// Accept a domain label suggestion
+export interface ClusterData {
+  id: number | string;
+  indices: number[];
+  conversationIds: string[];
+}
+
+export interface SuggestedLabel {
+  path: string;
+  definition: string;
+  confidence: string;
+  reason: string;
+}
+
+// Interface for domain label rule
+export interface DomainLabelRule {
+  id: string;
+  label: string;
+  bucketPath: string;
+  definition: string;
+  reason: string;
+  version: string;
+  author: string;
+  createdAt: string;
+}
+
+// Get existing domain labels
+export async function getDomainLabels(): Promise<DomainLabelRule[]> {
+  try {
+    return await fetchExternalAPI<DomainLabelRule[]>('/v1/buckets/labels/domain');
+  } catch (error) {
+    console.error("Failed to fetch domain labels:", error);
+    throw error;
+  }
+}
+
+export async function acceptDomainLabel(
+  bucketPath: string, 
+  suggestedLabel: SuggestedLabel,
+  cluster: ClusterData,
+  author?: string
+): Promise<void> {
+  try {
+    // Get API key for authorization
+    const apiKey = getApiKey(true);
+    if (!apiKey) {
+      throw new Error("API key is required to accept domain label");
+    }
+
+    console.log(`Accepting domain label ${suggestedLabel.path} for bucket ${bucketPath}`);
+
+    const response = await fetch(`${EXTERNAL_API_BASE_URL}/v1/labels/accept`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        bucketPath,
+        suggestedLabel,
+        cluster,
+        author: author || "unknown"
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      console.error("API error response:", errorText);
+      throw new Error(`Failed to accept domain label: ${response.status} ${response.statusText}`);
+    }
+
+    console.log("Domain label accepted successfully");
+  } catch (error) {
+    console.error("Failed to accept domain label:", error);
+    throw error;
+  }
+}
+
+// Domain Label Dashboard Types
+export interface DomainLabelDateCount {
+  day: string;
+  count: number;
+}
+
+export interface DomainLabelBucket {
+  path: string;
+  count: number;
+  dateWise: DomainLabelDateCount[];
+}
+
+export interface DomainLabelCategory {
+  path: string;
+  count: number;
+  buckets: DomainLabelBucket[];
+  dateWise: DomainLabelDateCount[];
+}
+
+export interface DomainLabelAggregationResponse {
+  count: number;
+  domains: DomainLabelCategory[];
+}
+
+// Get domain label aggregation for dashboard
+export async function getDomainLabelAggregation(): Promise<DomainLabelAggregationResponse> {
+  try {
+    const apiKey = getApiKey(true);
+    if (!apiKey) {
+      throw new Error("API key is required for domain label aggregation");
+    }
+
+    const response = await fetch(`${EXTERNAL_API_BASE_URL}/v1/dashboard/domains/aggregation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      console.error("API error response:", errorText);
+      throw new Error(`Failed to fetch domain label aggregation: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log("Domain label aggregation data:", data);
+    return data;
+  } catch (error) {
+    console.error("Failed to fetch domain label aggregation:", error);
+    throw error;
+  }
+}
+
+// Conversation types for transcript viewing
+export interface Message {
+  role: "user" | "assistant" | "system";
+  content: string;
+  name?: string;
+  timestamp?: string;
+}
+
+export interface Conversation {
+  id: string;
+  messages: Message[];
+  metadata?: {
+    created_at?: string;
+    model?: string;
+    [key: string]: any;
+  };
+}
+
+export interface ConversationListResponse {
+  data: Conversation[];
+  has_more: boolean;
+  last_id?: string;
+}
+
+// Fetch conversation transcripts for a domain label
+export async function getConversationTranscripts(
+  domainLabel: string,
+  limit: number = 10,
+  after?: string
+): Promise<ConversationListResponse> {
+  try {
+    const apiKey = getApiKey(true);
+    if (!apiKey) {
+      throw new Error("API key is required to fetch conversations");
+    }
+
+    // Build the URL with query parameters
+    let url = `${EXTERNAL_API_BASE_URL}/v1/conversations/transcripts?limit=${limit}&domainLabel=${encodeURIComponent(domainLabel)}`;
+    if (after) {
+      url += `&after=${encodeURIComponent(after)}`;
+    }
+
+    console.log(`Fetching conversations from: ${url}`);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      console.error("API error response:", errorText);
+      throw new Error(`Failed to fetch conversations: ${response.status} ${response.statusText}`);
+    }
+
+    const rawData = await response.json();
+    console.log(`Received raw API response:`, rawData);
+    
+    // Transform the API response to match our expected structure
+    const transformedData: Conversation[] = (rawData || []).map((conversation: any) => {
+      // Transform the messages to match our expected structure
+      const messages: Message[] = (conversation.messages || []).map((msg: any) => {
+        return {
+          // Convert API's uppercase roles to lowercase to match our interface
+          role: (msg.role || "").toLowerCase() as "user" | "assistant" | "system",
+          content: msg.text || "", // API uses 'text' instead of 'content'
+          timestamp: msg.timestamp || undefined
+        };
+      });
+
+      return {
+        id: conversation.conversationId || "",
+        messages: messages,
+        metadata: {
+          created_at: conversation.createdAt || undefined,
+          model: conversation.model || undefined,
+          isGenericLabelAvailable: conversation.isGenericLabelAvailable
+        }
+      };
+    });
+    
+    // For pagination, we use the ID of the last conversation as the cursor
+    const lastId = transformedData.length > 0 ? 
+      transformedData[transformedData.length - 1].id : 
+      undefined;
+      
+    console.log(`Last conversation ID (for pagination): ${lastId}`);
+    
+    // Determine if there are more results
+    // We'll use the array length compared to the limit as a heuristic
+    // If we received exactly the number we asked for, there's likely more
+    const hasMore = transformedData.length >= limit;
+    
+    const responseData: ConversationListResponse = {
+      data: transformedData,
+      has_more: hasMore,
+      last_id: lastId
+    };
+    
+    console.log(`Transformed ${transformedData.length} conversations, has_more: ${hasMore}`);
+    
+    return responseData;
+  } catch (error) {
+    console.error("Failed to fetch conversation transcripts:", error);
+    throw error;
+  }
+}
