@@ -25,7 +25,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Loader, InfoIcon, CheckCircle, Calendar, User, ChevronRight, ChevronDown, 
-  BarChart, PieChart, MessageSquare, X, Clock, Download
+  BarChart, PieChart, MessageSquare, X, Clock, Download, Star
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -33,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { PieChart as RechartsPC, Pie, ResponsiveContainer, Cell, Legend, Tooltip as ChartTooltip, BarChart as RechartsBC, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import React from "react";
 
 // Hard-coded email for attribution
 const AUTHOR_EMAIL = "jb@masaic.ai";
@@ -122,6 +123,21 @@ const getIntegerTicks = (data: {count: number}[]): number[] => {
   return Array.from({length: tickCount}, (_, i) => i * step);
 };
 
+// Get the last part of a label path (after the last /)
+const getLastPathSegment = (path: string): string => {
+  const parts = path.split('/');
+  return parts[parts.length - 1] || path;
+};
+
+// Add a utility function to format label names
+const formatLabelName = (name: string): string => {
+  // Split by underscores and capitalize each word
+  return name
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
 export default function DomainLabellingPage() {
   const [activeTab, setActiveTab] = useState<string>("create");
   const [selectedGenericLabel, setSelectedGenericLabel] = useState<string>("");
@@ -155,6 +171,13 @@ export default function DomainLabellingPage() {
   const [hasMoreConversations, setHasMoreConversations] = useState(false);
   const [lastConversationId, setLastConversationId] = useState<string | undefined>(undefined);
   const conversationListRef = useRef<HTMLDivElement>(null);
+  
+  // Agentic UX enhancements
+  const [recommendedLabels, setRecommendedLabels] = useState<GenericLabel[]>([]);
+  const [recentLabels, setRecentLabels] = useState<string[]>([]);
+  const [categoryGroups, setCategoryGroups] = useState<Record<string, GenericLabel[]>>({});
+  const [sampleConversations, setSampleConversations] = useState<Record<string, string[]>>({});
+  const [showLabelCards, setShowLabelCards] = useState(true);
 
   // Fetch generic labels on component mount
   useEffect(() => {
@@ -165,6 +188,94 @@ export default function DomainLabellingPage() {
       try {
         const data = await getGenericLabels();
         setGenericLabels(data);
+        
+        // Set recommended labels (those with highest counts)
+        const sortedByCount = [...data].sort((a, b) => b.count - a.count);
+        setRecommendedLabels(sortedByCount.slice(0, 3));
+        
+        // Get recent labels from localStorage
+        const recentLabelsFromStorage = localStorage.getItem('recentGenericLabels');
+        if (recentLabelsFromStorage) {
+          try {
+            setRecentLabels(JSON.parse(recentLabelsFromStorage));
+          } catch (e) {
+            console.error("Error parsing recent labels from localStorage:", e);
+            setRecentLabels([]);
+          }
+        }
+        
+        // Group labels by their top-level category
+        const groups: Record<string, GenericLabel[]> = {};
+        data.forEach(label => {
+          // Extract top-level category from the path
+          const parts = label.path.split('/');
+          if (parts.length > 1) {
+            const category = parts[0];
+            if (!groups[category]) {
+              groups[category] = [];
+            }
+            groups[category].push(label);
+          } else {
+            // Handle labels without a category
+            if (!groups['general']) {
+              groups['general'] = [];
+            }
+            groups['general'].push(label);
+          }
+        });
+        setCategoryGroups(groups);
+        
+        // Generate mock sample conversations for each label
+        // In a real app, you would fetch these from the API
+        const mockSamples: Record<string, string[]> = {};
+        data.forEach(label => {
+          // Create 2-3 sample conversations per label
+          const samplesCount = Math.floor(Math.random() * 2) + 2; // 2 or 3 samples
+          const samples = [];
+          
+          for (let i = 0; i < samplesCount; i++) {
+            let sample = '';
+            
+            if (label.path.includes('user_escalation')) {
+              if (label.path.includes('negative_sentiment')) {
+                sample = "Customer: I've been waiting for assistance for over 20 minutes and nobody is helping me! This is ridiculous. Let me speak to a manager right now.";
+              } else {
+                sample = "Customer: I've tried everything the bot suggested, but it's not working. Can I please speak to a human agent?";
+              }
+            } else if (label.path.includes('technical_issue')) {
+              sample = "Customer: The app keeps crashing whenever I try to complete my payment. I've tried restarting my phone but that didn't help.";
+            } else if (label.path.includes('billing')) {
+              sample = "Customer: I'm looking at my statement and there's a charge I don't recognize. Can you explain what this is for?";
+            } else {
+              // Generic samples for other categories
+              const samples = [
+                "Customer: I need help with my account. I can't seem to log in.",
+                "Customer: I just had a question about your service options.",
+                "Customer: How do I update my shipping address on file?",
+                "Customer: When will my order be delivered?",
+                "Customer: Can you tell me more about your return policy?"
+              ];
+              sample = samples[Math.floor(Math.random() * samples.length)];
+            }
+            
+            samples.push(sample);
+          }
+          
+          mockSamples[label.path] = samples;
+        });
+        setSampleConversations(mockSamples);
+        
+        // Initialize expanded state for categories
+        const initialExpandedState: Record<string, boolean> = {};
+        Object.keys(groups).forEach(category => {
+          initialExpandedState[category] = false;
+        });
+        // Expand the first category by default
+        if (Object.keys(groups).length > 0) {
+          initialExpandedState[Object.keys(groups)[0]] = true;
+        }
+        setExpandedCategories(initialExpandedState);
+        
       } catch (error) {
         console.error("Error fetching generic labels:", error);
         setGenericLabelsError(error instanceof Error ? error : new Error("Failed to fetch generic labels"));
@@ -210,6 +321,15 @@ export default function DomainLabellingPage() {
       toast.error("Please select a model first");
       return;
     }
+
+    // Save to recent labels
+    const updatedRecentLabels = [
+      selectedGenericLabel,
+      ...recentLabels.filter(label => label !== selectedGenericLabel)
+    ].slice(0, 5); // Keep only the 5 most recent
+    
+    setRecentLabels(updatedRecentLabels);
+    localStorage.setItem('recentGenericLabels', JSON.stringify(updatedRecentLabels));
 
     setIsLoadingSuggestions(true);
     setSuggestionsError(null);
@@ -410,6 +530,14 @@ export default function DomainLabellingPage() {
     }));
   };
 
+  // Toggle category expansion for generic label cards
+  const toggleCategoryExpansion = (category: string) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+  };
+
   // Fetch aggregation data for dashboard
   const fetchAggregationData = async () => {
     setIsLoadingAggregation(true);
@@ -479,6 +607,49 @@ export default function DomainLabellingPage() {
       value: category.count,
       fullPath: category.path
     }));
+  };
+
+  // Get total count of all domain labels for percentage calculations
+  const getTotalDomainCount = () => {
+    return domainCategories.reduce((total, category) => total + category.count, 0);
+  };
+
+  // Get percentage contribution of a category
+  const getCategoryPercentage = (categoryPath: string) => {
+    const category = domainCategories.find(c => c.path === categoryPath);
+    if (!category) return 0;
+    
+    const total = getTotalDomainCount();
+    return total > 0 ? (category.count / total) * 100 : 0;
+  };
+
+  // Get bucket count from domain category data
+  const getBucketCount = (categoryPath: string, bucketPath: string) => {
+    const category = domainCategories.find(c => c.path === categoryPath);
+    if (!category) return 0;
+    
+    const bucket = category.buckets.find(b => b.path === bucketPath);
+    return bucket ? bucket.count : 0;
+  };
+
+  // Get percentage contribution of a bucket within its category
+  const getBucketPercentage = (categoryPath: string, bucketPath: string) => {
+    const category = domainCategories.find(c => c.path === categoryPath);
+    if (!category || category.count === 0) return 0;
+    
+    const bucket = category.buckets.find(b => b.path === bucketPath);
+    return bucket ? (bucket.count / category.count) * 100 : 0;
+  };
+
+  // Get the selected category name
+  const getSelectedCategoryName = () => {
+    return selectedCategory || '';
+  };
+
+  // Get percentage contribution of the selected category
+  const getSelectedCategoryPercentage = () => {
+    if (!selectedCategory) return 0;
+    return getCategoryPercentage(selectedCategory);
   };
 
   // Get data for buckets pie chart within selected category
@@ -631,78 +802,288 @@ export default function DomainLabellingPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid grid-cols-3 mb-6">
           <TabsTrigger value="create">Create Domain Labels</TabsTrigger>
-          <TabsTrigger value="existing">Existing Domain Labels</TabsTrigger>
+          <TabsTrigger value="existing">Problem Buckets</TabsTrigger>
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
         </TabsList>
         
         <TabsContent value="create" className="space-y-6">
+          {/* Guided Experience Banner */}
+          <Card className="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+            <CardContent className="p-4">
+              <div className="flex flex-col md:flex-row gap-4 items-start">
+                <div className="bg-blue-100 dark:bg-blue-900/50 p-3 rounded-full">
+                  <InfoIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-medium text-blue-700 dark:text-blue-300 mb-2">Guided Labeling Experience</h3>
+                  <p className="text-blue-600 dark:text-blue-400 mb-3">
+                    This wizard will help you generate intelligent domain label suggestions based on existing generic labels.
+                    Follow these steps to create well-structured domain labels:
+                  </p>
+                  <ol className="list-decimal list-inside text-blue-600 dark:text-blue-400 space-y-1 ml-2">
+                    <li>Select a generic label that needs domain-specific labeling</li>
+                    <li>Choose the AI model to analyze your data</li>
+                    <li>Review suggested clusters of similar conversations</li>
+                    <li>Select the most appropriate domain label for each cluster</li>
+                  </ol>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Generic Labels Selection */}
           <Card>
             <CardHeader>
-              <CardTitle>Step 1: Select Generic Label</CardTitle>
-              <CardDescription>
-                Choose a generic label category to generate domain label suggestions
-              </CardDescription>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>Step 1: Explore Conversation Categories</CardTitle>
+                  <CardDescription>
+                    Choose a conversation category to analyze and generate domain-specific labels
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setShowLabelCards(!showLabelCards)}
+                    className="flex items-center gap-1"
+                  >
+                    {showLabelCards ? (
+                      <>
+                        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4">
+                          <path d="M1.5 3C1.22386 3 1 3.22386 1 3.5V11.5C1 11.7761 1.22386 12 1.5 12H13.5C13.7761 12 14 11.7761 14 11.5V3.5C14 3.22386 13.7761 3 13.5 3H1.5ZM7 5H13V10H7V5ZM6 5H2V10H6V5Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd" />
+                        </svg>
+                        View as List
+                      </>
+                    ) : (
+                      <>
+                        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4">
+                          <path d="M2.5 4C2.22386 4 2 4.22386 2 4.5V6.5C2 6.77614 2.22386 7 2.5 7H4.5C4.77614 7 5 6.77614 5 6.5V4.5C5 4.22386 4.77614 4 4.5 4H2.5ZM2.5 8C2.22386 8 2 8.22386 2 8.5V10.5C2 10.7761 2.22386 11 2.5 11H4.5C4.77614 11 5 10.7761 5 10.5V8.5C5 8.22386 4.77614 8 4.5 8H2.5ZM6 4.5C6 4.22386 6.22386 4 6.5 4H12.5C12.7761 4 13 4.22386 13 4.5V6.5C13 6.77614 12.7761 7 12.5 7H6.5C6.22386 7 6 6.77614 6 6.5V4.5ZM6.5 8C6.22386 8 6 8.22386 6 8.5V10.5C6 10.7761 6.22386 11 6.5 11H12.5C12.7761 11 13 10.7761 13 10.5V8.5C13 8.22386 12.7761 8 12.5 8H6.5Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd" />
+                        </svg>
+                        View as Cards
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {genericLabelsError && (
-                  <div className="text-red-500">
-                    Error loading generic labels: {genericLabelsError.message}
-                  </div>
-                )}
-                
-                {isLoadingGenericLabels ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-10 w-full" />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Label htmlFor="generic-label">Generic Label</Label>
-                    <Select
-                      value={selectedGenericLabel}
-                      onValueChange={setSelectedGenericLabel}
-                      disabled={isLoadingGenericLabels}
-                    >
-                      <SelectTrigger id="generic-label" className="w-full">
-                        <SelectValue placeholder="Select a generic label" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {genericLabels.map((label) => (
-                          <SelectItem key={label.path} value={label.path}>
-                            {label.path} ({label.count})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                
-                <div className="space-y-2">
-                  <Label htmlFor="model-select">Model</Label>
+              {genericLabelsError && (
+                <div className="text-red-500">
+                  Error loading generic labels: {genericLabelsError.message}
+                </div>
+              )}
+              
+              {isLoadingGenericLabels ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-24 w-full" />
+                </div>
+              ) : showLabelCards ? (
+                // Card View
+                <div className="space-y-6">
+                  {Object.entries(categoryGroups).map(([category, labels]) => (
+                    <div key={category} className="rounded-lg border overflow-hidden">
+                      <div 
+                        className={`flex items-center justify-between p-3 ${
+                          expandedCategories[category] ? 'bg-accent' : 'bg-background'
+                        } hover:bg-accent/80 cursor-pointer border-b`}
+                        onClick={() => toggleCategoryExpansion(category)}
+                      >
+                        <div className="flex items-center gap-2">
+                          {expandedCategories[category] ? 
+                            <ChevronDown className="h-5 w-5 text-muted-foreground" /> : 
+                            <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                          }
+                          <h3 className="font-medium capitalize">{category}</h3>
+                          <Badge variant="default" className="ml-2">{labels.length}</Badge>
+                        </div>
+                        <Badge variant="default" className="bg-primary/90 hover:bg-primary">
+                          {labels.reduce((sum, label) => sum + label.count, 0)} conversations
+                        </Badge>
+                      </div>
+                      
+                      {expandedCategories[category] && (
+                        <div className="p-3 bg-background/50">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {labels.map(label => {
+                              // Extract subcategory from the full path
+                              const parts = label.path.split('/');
+                              const subcategory = parts.length > 2 ? parts[1] : "general";
+                              const specificLabel = parts.length > 2 ? parts[2] : parts[1];
+                              
+                              return (
+                                <Card 
+                                  key={label.path}
+                                  className={`overflow-hidden border-2 hover:border-primary cursor-pointer transition-all ${
+                                    selectedGenericLabel === label.path ? 'border-primary' : 'border-muted'
+                                  }`}
+                                  onClick={() => setSelectedGenericLabel(label.path)}
+                                >
+                                  <CardHeader className="p-3 pb-0">
+                                    <div className="flex justify-between items-start">
+                                      <div>
+                                        <CardTitle className="text-base font-medium">{specificLabel}</CardTitle>
+                                        <CardDescription className="text-xs mt-1">
+                                          Subcategory: <span className="font-medium capitalize">{subcategory}</span>
+                                        </CardDescription>
+                                      </div>
+                                      <Badge variant="secondary" className="ml-1">{label.count}</Badge>
+                                    </div>
+                                  </CardHeader>
+                                  <CardContent className="p-3 pt-2">
+                                    <div className="text-xs text-muted-foreground space-y-1 border-t pt-2 mt-1">
+                                      <p className="font-medium text-foreground/80">Sample conversations:</p>
+                                      {sampleConversations[label.path] && sampleConversations[label.path].slice(0, 1).map((sample, idx) => (
+                                        <div key={idx} className="pl-2 border-l-2 border-muted-foreground/20 italic">
+                                          {sample}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                // List View (Dropdown)
+                <div className="space-y-4">
+                  <Label htmlFor="generic-label">Generic Label</Label>
                   <Select
-                    value={selectedModel}
-                    onValueChange={setSelectedModel}
-                    disabled={isLoadingSuggestions}
+                    value={selectedGenericLabel}
+                    onValueChange={setSelectedGenericLabel}
+                    disabled={isLoadingGenericLabels}
                   >
-                    <SelectTrigger id="model-select" className="w-full">
-                      <SelectValue placeholder="Select a model" />
+                    <SelectTrigger id="generic-label" className="w-full">
+                      <SelectValue placeholder="Select a generic label" />
                     </SelectTrigger>
                     <SelectContent>
-                      {AVAILABLE_MODELS.map((model) => (
-                        <SelectItem key={model} value={model}>
-                          {model}
+                      {genericLabels.map((label) => (
+                        <SelectItem key={label.path} value={label.path}>
+                          {label.path} ({label.count})
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  
+                  {/* Recommended Labels */}
+                  {recommendedLabels.length > 0 && (
+                    <div className="mt-4">
+                      <h4 className="text-sm font-medium mb-2 flex items-center">
+                        <Star className="h-4 w-4 mr-1 text-yellow-500" />
+                        Recommended Labels (High Usage)
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {recommendedLabels.map(label => (
+                          <Button 
+                            key={label.path} 
+                            variant="outline" 
+                            size="sm"
+                            className="border-yellow-200 bg-yellow-50 hover:bg-yellow-100 dark:border-yellow-800 dark:bg-yellow-900/20 dark:hover:bg-yellow-900/40"
+                            onClick={() => setSelectedGenericLabel(label.path)}
+                          >
+                            {label.path} ({label.count})
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Recent Labels */}
+                  {recentLabels.length > 0 && (
+                    <div className="mt-4">
+                      <h4 className="text-sm font-medium mb-2 flex items-center">
+                        <Clock className="h-4 w-4 mr-1 text-blue-500" />
+                        Recently Used
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {recentLabels.map(label => (
+                          <Button 
+                            key={label} 
+                            variant="outline" 
+                            size="sm"
+                            className="border-blue-200 bg-blue-50 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:hover:bg-blue-900/40"
+                            onClick={() => setSelectedGenericLabel(label)}
+                          >
+                            {label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
+              )}
+               
+              {/* Selected label preview */}
+              {selectedGenericLabel && (
+                <div className="mt-6 bg-muted/30 rounded-lg p-4 border">
+                  <div className="flex flex-col md:flex-row gap-4 items-start">
+                    <div className="bg-primary/10 p-3 rounded-full">
+                      <svg 
+                        xmlns="http://www.w3.org/2000/svg" 
+                        width="24" 
+                        height="24" 
+                        viewBox="0 0 24 24" 
+                        fill="none" 
+                        stroke="currentColor" 
+                        strokeWidth="2" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round" 
+                        className="text-primary"
+                      >
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-medium text-foreground mb-1">Selected: {selectedGenericLabel}</h3>
+                      <p className="text-muted-foreground text-sm mb-3">
+                        Review sample conversations for this category before generating domain label suggestions:
+                      </p>
+                      <div className="space-y-2 pl-4 border-l-2 border-primary/30">
+                        {sampleConversations[selectedGenericLabel]?.map((sample, idx) => (
+                          <div key={idx} className="bg-background p-3 rounded-md text-sm border">
+                            {sample}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="space-y-4 mt-6">
+                <Label htmlFor="model-select">Step 2: Select AI Model</Label>
+                <Select
+                  value={selectedModel}
+                  onValueChange={setSelectedModel}
+                  disabled={isLoadingSuggestions}
+                >
+                  <SelectTrigger id="model-select" className="w-full">
+                    <SelectValue placeholder="Select a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AVAILABLE_MODELS.map((model) => (
+                      <SelectItem key={model} value={model}>
+                        {model}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 
                 <Button 
                   onClick={fetchDomainSuggestions}
                   disabled={!selectedGenericLabel || !selectedModel || isLoadingSuggestions}
-                  className="w-full"
+                  className="w-full mt-6"
+                  size="lg"
                 >
                   {isLoadingSuggestions ? (
                     <span className="flex items-center">
@@ -818,6 +1199,36 @@ export default function DomainLabellingPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {/* AI Recommendation Banner */}
+                    {getSelectedClusterSuggestions().length > 0 && (
+                      <div className="mb-6 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-400 p-2 rounded-full">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M21 16.0002V8.00024C20.9996 7.6473 20.9071 7.30083 20.7315 7.00251C20.556 6.70419 20.3037 6.46423 20 6.31024L13 2.24024C12.696 2.08608 12.3511 2.00391 12 2.00391C11.6489 2.00391 11.304 2.08608 11 2.24024L4 6.31024C3.69626 6.46423 3.44398 6.70419 3.26846 7.00251C3.09294 7.30083 3.00036 7.6473 3 8.00024V16.0002C3.00036 16.3532 3.09294 16.6997 3.26846 16.998C3.44398 17.2963 3.69626 17.5363 4 17.6902L11 21.7602C11.304 21.9144 11.6489 21.9966 12 21.9966C12.3511 21.9966 12.696 21.9144 13 21.7602L20 17.6902C20.3037 17.5363 20.556 17.2963 20.7315 16.998C20.9071 16.6997 20.9996 16.3532 21 16.0002Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <path d="M3.27 6.96L12 12.01L20.73 6.96" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <path d="M12 22.08V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-medium text-purple-800 dark:text-purple-300">AI Recommendation</h3>
+                            <p className="text-purple-700 dark:text-purple-400 text-sm mt-1">
+                              Based on the conversation examples, our AI suggests selecting:
+                            </p>
+                            <div className="mt-2 bg-white dark:bg-background/50 border border-purple-200 dark:border-purple-700 rounded-md p-3">
+                              <p className="font-medium text-purple-900 dark:text-purple-300">
+                                {getSelectedClusterSuggestions().sort((a, b) => b.confidence - a.confidence)[0]?.suggestion || "Loading..."}
+                              </p>
+                              <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+                                This suggestion has the highest confidence score ({getConfidenceText(getSelectedClusterSuggestions().sort((a, b) => b.confidence - a.confidence)[0]?.confidence || 0)}) 
+                                based on semantic analysis.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="space-y-4">
                       {getSelectedClusterSuggestions().map((suggestion, index) => (
                         <Card 
@@ -895,120 +1306,239 @@ export default function DomainLabellingPage() {
         </TabsContent>
         
         <TabsContent value="existing" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Existing Domain Labels</CardTitle>
-              <CardDescription>
-                View all domain labels grouped by category
+          <Card className="bg-zinc-900 border-zinc-800">
+            <CardHeader className="border-b border-zinc-800">
+              <CardTitle className="text-zinc-100">Problem Buckets</CardTitle>
+              <CardDescription className="text-zinc-400">
+                Explore problem categories and their specific buckets
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="bg-zinc-900 pt-6">
               {isLoadingDomainLabels ? (
                 <div className="space-y-4">
-                  <Skeleton className="h-24 w-full" />
-                  <Skeleton className="h-24 w-full" />
-                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-24 w-full bg-zinc-800" />
+                  <Skeleton className="h-24 w-full bg-zinc-800" />
+                  <Skeleton className="h-24 w-full bg-zinc-800" />
                 </div>
               ) : domainLabelsError ? (
-                <div className="text-red-500 p-4 bg-red-50 rounded-md">
-                  <p className="font-semibold">Error loading domain labels</p>
+                <div className="text-red-400 p-4 bg-red-900/30 rounded-md border border-red-800">
+                  <p className="font-semibold">Error loading problem buckets</p>
                   <p>{domainLabelsError.message}</p>
-                  <Button onClick={fetchDomainLabels} variant="outline" className="mt-2">
+                  <Button onClick={fetchDomainLabels} variant="outline" className="mt-2 border-red-700 bg-red-900/20 text-red-300 hover:bg-red-900/40">
                     Try Again
                   </Button>
                 </div>
               ) : domainLabels.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground">No domain labels have been created yet</p>
-                  <Button onClick={() => setActiveTab("create")} className="mt-4">
-                    Create Domain Labels
+                <div className="text-center py-8 text-zinc-400">
+                  <p>No problem buckets have been created yet</p>
+                  <Button onClick={() => setActiveTab("create")} className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white">
+                    Create Problem Buckets
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {Object.entries(getDomainLabelsByCategory()).map(([category, labels]) => (
-                    <Collapsible
-                      key={category}
-                      open={expandedCategories[category]}
-                      onOpenChange={() => toggleCategory(category)}
-                      className="border rounded-lg"
-                    >
-                      <CollapsibleTrigger className="flex w-full items-center justify-between p-4 font-medium hover:bg-accent/50 rounded-t-lg">
-                        <div className="flex items-center gap-2">
-                          {expandedCategories[category] ? 
-                            <ChevronDown className="h-4 w-4" /> : 
-                            <ChevronRight className="h-4 w-4" />
+                <>
+                  {/* Category navigation only - removing search bar */}
+                  <div className="flex overflow-x-auto pb-2 mb-6 gap-2 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-800">
+                    {Object.keys(getDomainLabelsByCategory()).map(category => (
+                      <Button 
+                        key={category} 
+                        variant={selectedCategory === category ? "default" : "outline"}
+                        size="sm" 
+                        className={`whitespace-nowrap rounded-full capitalize ${
+                          selectedCategory === category 
+                            ? "bg-indigo-600 hover:bg-indigo-700 text-white" 
+                            : "border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-800"
+                        }`}
+                        onClick={() => {
+                          // Clear current selection if clicking the same category
+                          if (selectedCategory === category) {
+                            setSelectedCategory(null);
+                          } else {
+                            setSelectedCategory(category);
                           }
-                          <span className="capitalize">{category}</span>
-                          <Badge variant="outline" className="ml-2">{labels.length}</Badge>
-                        </div>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent className="border-t px-4 py-2">
-                        <div className="space-y-4 pt-2">
-                          {labels.map((label) => (
-                            <Card key={label.id} className="border-l-4 border-l-primary/50">
-                              <CardHeader className="pb-2">
-                                <div className="flex justify-between flex-col sm:flex-row">
-                                  <CardTitle className="text-lg break-all">{label.label}</CardTitle>
-                                </div>
-                              </CardHeader>
-                              <CardContent className="pb-2 space-y-3">
-                                {label.definition && (
-                                  <div>
-                                    <p className="text-sm font-medium mb-1">Definition:</p>
-                                    <p className="text-sm text-muted-foreground">{label.definition}</p>
-                                  </div>
-                                )}
-                                
-                                {label.reason && (
-                                  <div>
-                                    <p className="text-sm font-medium mb-1">Reasoning:</p>
-                                    <p className="text-sm text-muted-foreground">{label.reason}</p>
-                                  </div>
-                                )}
-                              </CardContent>
-                              <CardFooter className="flex flex-wrap gap-4 text-xs text-muted-foreground pt-0">
-                                <div className="flex items-center">
-                                  <User className="h-3 w-3 mr-1" />
-                                  {label.author}
-                                </div>
-                                <div className="flex items-center">
-                                  <Calendar className="h-3 w-3 mr-1" />
-                                  {formatDate(label.createdAt)}
-                                </div>
-                                <div className="flex flex-col gap-1 w-full mt-2 pt-2 border-t border-muted">
-                                  <div className="flex items-center">
-                                    <span className="font-medium mr-1">ID:</span> 
-                                    <span className="font-mono text-[10px]">{label.id}</span>
-                                  </div>
-                                  <div className="flex items-center">
-                                    <span className="font-medium mr-1">Source:</span> 
-                                    <span className="font-mono text-[10px]">{label.bucketPath}</span>
-                                  </div>
-                                </div>
-                              </CardFooter>
-                            </Card>
-                          ))}
-                        </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  ))}
-                </div>
+                          
+                          // Only fetch aggregation data if not already loaded
+                          if (domainCategories.length === 0) {
+                            fetchAggregationData();
+                          }
+                        }}
+                      >
+                        {category}
+                      </Button>
+                    ))}
+                  </div>
+                  
+                  {/* Selected category info */}
+                  {selectedCategory && (
+                    <div className="mb-6 p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-base font-medium capitalize text-zinc-200">
+                          {getSelectedCategoryName()} Problems
+                        </h3>
+                        <Badge variant="outline" className="bg-indigo-900/40 text-indigo-300 border-indigo-700">
+                          {getSelectedCategoryPercentage().toFixed(1)}% of all problems
+                        </Badge>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Interactive Problem Buckets Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {Object.entries(getDomainLabelsByCategory())
+                      // Filter by selected category if one is selected
+                      .filter(([category, _]) => !selectedCategory || category === selectedCategory)
+                      .map(([category, labels]) => {
+                        // Sort labels by bucket count in descending order
+                        const sortedLabels = [...labels].sort((a, b) => {
+                          const partsA = a.label.split('/');
+                          const partsB = b.label.split('/');
+                          const bucketPathA = partsA.length > 2 ? partsA[2] : partsA[0];
+                          const categoryPathA = partsA.length > 2 ? partsA[1] : category;
+                          const bucketPathB = partsB.length > 2 ? partsB[2] : partsB[0];
+                          const categoryPathB = partsB.length > 2 ? partsB[1] : category;
+                          
+                          const countA = getBucketCount(categoryPathA, bucketPathA);
+                          const countB = getBucketCount(categoryPathB, bucketPathB);
+                          
+                          return countB - countA; // Descending order
+                        });
+                        
+                        return (
+                          <React.Fragment key={category}>
+                            {sortedLabels.map((label) => {
+                              // Extract category parts for better display
+                              const parts = label.label.split('/');
+                              const displayLabel = parts.length > 2 ? parts[parts.length - 1] : parts[0];
+                              const bucketPath = parts.length > 2 ? parts[2] : parts[0];
+                              const categoryPath = parts.length > 2 ? parts[1] : category;
+                              
+                              // Get metrics for this bucket
+                              const bucketCount = getBucketCount(categoryPath, bucketPath);
+                              const bucketPercentage = getBucketPercentage(categoryPath, bucketPath);
+                              
+                              return (
+                                <Card 
+                                  key={label.id} 
+                                  className="group overflow-hidden border border-zinc-800 hover:border-indigo-600 hover:shadow-[0_0_0_1px_rgba(79,70,229,0.4)] transition-all cursor-pointer h-auto bg-zinc-900"
+                                  onClick={() => {
+                                    // Extract category and bucket from label path
+                                    const parts = label.label.split('/');
+                                    if (parts.length >= 3) {
+                                      const category = parts[1];
+                                      const bucket = parts[2];
+                                      openConversationViewer(category, bucket);
+                                    }
+                                  }}
+                                >
+                                  <CardHeader className="pb-2">
+                                    <div className="flex justify-between items-start">
+                                      <CardTitle className="text-lg text-zinc-100 group-hover:text-indigo-300 transition-colors">
+                                        {formatLabelName(displayLabel)}
+                                      </CardTitle>
+                                      {/* Info icon with tooltip for definition */}
+                                      {label.definition && (
+                                        <div className="relative group/tooltip">
+                                          <div className="p-1.5 rounded-full hover:bg-zinc-800 cursor-help">
+                                            <InfoIcon className="h-4 w-4 text-zinc-500 group-hover:text-indigo-400" />
+                                          </div>
+                                          <div className="absolute right-0 w-64 p-3 mt-2 bg-zinc-900 text-zinc-300 text-sm rounded-md shadow-lg border border-zinc-700 z-50 invisible group-hover/tooltip:visible opacity-0 group-hover/tooltip:opacity-100 transition-opacity">
+                                            {label.definition}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CardHeader>
+                                  <CardContent className="pb-3">
+                                    {/* Metrics information */}
+                                    <div className="bg-zinc-800 rounded-md mb-3 overflow-hidden">
+                                      <div className="p-4">
+                                        {/* Larger count display with more space */}
+                                        <div className="py-3 text-center">
+                                          <span className="text-5xl font-bold text-indigo-300" style={{ fontSize: "3.5rem" }}>{bucketCount}</span>
+                                        </div>
+                                        
+                                        {/* Contribution with inline bar */}
+                                        <div className="flex items-center gap-2 mt-2">
+                                          <span className="text-xs whitespace-nowrap text-zinc-400">Contribution:</span>
+                                          <div className="flex-grow h-2 bg-zinc-700/50 rounded-full">
+                                            <div 
+                                              className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full" 
+                                              style={{ width: `${Math.max(bucketPercentage, 3)}%` }} 
+                                            />
+                                          </div>
+                                          <span className="text-xs font-medium text-zinc-300">{bucketPercentage.toFixed(1)}%</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="flex flex-wrap gap-2 mt-1">
+                                      {/* Technical badge */}
+                                      {label.label.includes('technical') && (
+                                        <Badge variant="secondary" className="bg-blue-900/30 text-blue-300 border-blue-800">
+                                          Technical
+                                        </Badge>
+                                      )}
+                                      {/* Billing badge */}
+                                      {label.label.includes('billing') && (
+                                        <Badge variant="secondary" className="bg-green-900/30 text-green-300 border-green-800">
+                                          Billing
+                                        </Badge>
+                                      )}
+                                      {/* Support badge */}
+                                      {label.label.includes('support') && (
+                                        <Badge variant="secondary" className="bg-purple-900/30 text-purple-300 border-purple-800">
+                                          Support
+                                        </Badge>
+                                      )}
+                                      {/* Removed escalation badge */}
+                                    </div>
+                                  </CardContent>
+                                  <CardFooter className="flex justify-between items-center pt-0 text-sm text-zinc-500 border-t border-zinc-800 px-4 py-3 bg-zinc-900/80">
+                                    <div className="flex items-center">
+                                      <User className="h-3 w-3 mr-1" />
+                                      <span className="truncate max-w-[100px]" title={label.author}>
+                                        {label.author.split('@')[0]}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center">
+                                      <Calendar className="h-3 w-3 mr-1" />
+                                      {formatDate(label.createdAt).split(',')[0]}
+                                    </div>
+                                    <Button variant="outline" size="sm" className="h-7 px-3 bg-indigo-900/20 text-indigo-300 border-indigo-800 hover:bg-indigo-900/40 hover:text-indigo-200">
+                                      <MessageSquare className="h-3 w-3 mr-1" />
+                                      View Conversations
+                                    </Button>
+                                  </CardFooter>
+                                </Card>
+                              );
+                            })}
+                          </React.Fragment>
+                        );
+                      })}
+                  </div>
+                </>
               )}
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex justify-between border-t border-zinc-800 bg-zinc-900">
+              <Button 
+                onClick={() => setActiveTab("create")} 
+                variant="outline"
+                className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
+              >
+                Create New Problem Bucket
+              </Button>
               <Button 
                 onClick={fetchDomainLabels} 
-                variant="outline" 
-                className="w-full"
+                variant="outline"
                 disabled={isLoadingDomainLabels}
+                className="border-zinc-700 bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100"
               >
                 {isLoadingDomainLabels ? (
                   <span className="flex items-center">
                     <Loader className="mr-2 h-4 w-4 animate-spin" />
                     Refreshing...
                   </span>
-                ) : "Refresh Domain Labels"}
+                ) : "Refresh Problem Buckets"}
               </Button>
             </CardFooter>
           </Card>

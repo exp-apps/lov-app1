@@ -1,4 +1,3 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -46,42 +45,43 @@
   }
 
   .dark {
-    --background: 0 0% 10%;
-    --foreground: 0 0% 90%;
+    /* Modern dark theme with zinc and indigo accents */
+    --background: 240 5% 9%; /* zinc-950 */
+    --foreground: 240 5% 96%; /* zinc-100 */
 
-    --card: 0 0% 12%;
-    --card-foreground: 0 0% 90%;
+    --card: 240 4% 12%; /* zinc-900 */
+    --card-foreground: 240 5% 96%; /* zinc-100 */
 
-    --popover: 0 0% 12%;
-    --popover-foreground: 0 0% 90%;
+    --popover: 240 4% 12%; /* zinc-900 */
+    --popover-foreground: 240 5% 96%; /* zinc-100 */
 
-    --primary: 0 0% 90%;
-    --primary-foreground: 0 0% 10%;
+    --primary: 226 70% 55%; /* indigo-500 */
+    --primary-foreground: 0 0% 100%; /* white */
 
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 0 0% 90%;
+    --secondary: 240 5% 16%; /* zinc-800 */
+    --secondary-foreground: 240 5% 96%; /* zinc-100 */
 
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 60%;
+    --muted: 240 5% 16%; /* zinc-800 */
+    --muted-foreground: 240 5% 65%; /* zinc-400 */
 
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 90%;
+    --accent: 226 70% 16%; /* indigo-900 */
+    --accent-foreground: 226 70% 90%; /* indigo-100 */
 
-    --destructive: 0 60% 50%;
+    --destructive: 0 65% 52%; /* red-600 */
     --destructive-foreground: 0 0% 98%;
 
-    --success: 142 60% 40%;
+    --success: 142 65% 45%;
     --success-foreground: 0 0% 98%;
 
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 10%;
 
-    --info: 199 89% 48%;
+    --info: 217 91% 60%; /* blue-500 */
     --info-foreground: 0 0% 98%;
 
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 0 0% 30%;
+    --border: 240 5% 18%; /* zinc-800 */
+    --input: 240 5% 18%; /* zinc-800 */
+    --ring: 226 70% 55%; /* indigo-500 */
   }
 }
 
@@ -108,4 +108,29 @@
   .badge-info {
     @apply bg-info text-info-foreground;
   }
+}
+
+/* Dark Mode Scrollbars */
+.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: hsl(240 5% 14%); /* zinc-850 */
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(240 5% 26%); /* zinc-700 */
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: hsl(240 5% 34%); /* zinc-600 */
+}
+
+/* Improve focus styles for dark mode */
+.dark :focus-visible {
+  outline-color: hsl(226 70% 55%); /* indigo-500 */
 }
